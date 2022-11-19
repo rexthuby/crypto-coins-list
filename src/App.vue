@@ -8,104 +8,165 @@ export default {
       select: null,
       graph: [],
       error: '',
-      matchTicker: []
+      matchTicker: [],
+      filter: '',
+      page: 1,
+      hasNextPage: false,
     }
   },
+
   methods: {
     addTicker() {
       if (!this.ticker.length) {
         return
       }
+
       try {
-        this.validateTicker()
+        this.validateTicker();
       } catch (e) {
         this.error = e.message;
         return
       }
-      let coin = {
+
+      const currentTicker = {
         name: this.ticker,
         value: '-',
       };
-      this.tickers.push(coin);
-      setInterval(async () => {
-        if (!this.tickers.filter((t) => t.name === coin.name).length) {
-          return
-        }
-        const binanceTickerData = await fetch(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${coin.name}usdt`)
-            .then((res) => res.json());
-        const price = parseFloat(binanceTickerData.markPrice) > 1 ?
-            parseFloat(binanceTickerData.markPrice).toFixed(2) :
-            parseFloat(binanceTickerData.markPrice).toPrecision(2);
-        this.tickers.find((ticker) => coin.name === ticker.name).value = price;
-        if (this.select?.name === coin.name) {
-          if (this.graph.length > 200) {
-            this.graph.shift();
-          }
-          this.graph.push(price);
-        }
-      }, 1000);
+
+      this.tickers.push(currentTicker);
+
+      this.subscribeToTickerUpdates(currentTicker.name);
+
+      localStorage.setItem('tickers-list', JSON.stringify(this.tickers));
+
+      this.filter = '';
       this.ticker = '';
       this.matchTicker = [];
     },
+
     validateTicker() {
       if (this.tickers.filter(t => t.name.toLowerCase() === this.ticker.toLowerCase()).length) {
         throw new Error('Ticker is in list');
       }
+
       const ticketList = JSON.parse(localStorage.getItem('binance-tickers-list'));
       if (!ticketList.filter(name => name === this.ticker.toUpperCase()).length) {
         throw new Error('Ticker is not exist on binance');
       }
     },
+
     deleteTicker(deleteTicket) {
-      this.tickers = this.tickers.filter((ticket) => ticket !== deleteTicket)
+      this.tickers = this.tickers.filter((ticket) => ticket !== deleteTicket);
+
+      localStorage.setItem('tickers-list', JSON.stringify(this.tickers));
+
       if (deleteTicket === this.select) {
         this.select = null;
       }
+
     },
+
     normalizedGraph() {
       const maxValue = Math.max(...this.graph);
       const minValue = Math.min(...this.graph);
+
       if (maxValue === minValue) {
         return this.graph.map((price) => 50);
       }
+
       return this.graph.map((price) => 2 + ((price - minValue) * 98) / (maxValue - minValue));
     },
+
     selectTicker(ticket) {
       this.graph = [];
       this.select = ticket;
     },
+
     setSimilarTickers() {
       this.error = '';
+
       if (!this.ticker.length) {
         this.matchTicker = [];
         return
       }
+
       const binanceTickers = JSON.parse(localStorage.getItem('binance-tickers-list'))
       this.matchTicker = binanceTickers.filter(t => {
         return t.toLowerCase().includes(this.ticker.toLowerCase());
-      })
+      });
     },
+
     setSelectedTicker(tickerName) {
       this.ticker = tickerName;
       this.addTicker();
+    },
+
+    subscribeToTickerUpdates(tickerName) {
+      setInterval(async () => {
+
+        if (!this.tickers.filter((t) => t.name === tickerName).length) {
+          return
+        }
+
+        const binanceTickerData = await fetch(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${tickerName}usdt`)
+            .then((res) => res.json());
+
+        const price = parseFloat(binanceTickerData.markPrice) > 1 ?
+            parseFloat(binanceTickerData.markPrice).toFixed(2) :
+            parseFloat(binanceTickerData.markPrice).toPrecision(2);
+
+        this.tickers.find((ticker) => tickerName === ticker.name).value = price;
+
+        if (this.select?.name === tickerName) {
+          if (this.graph.length > 200) {
+            this.graph.shift();
+          }
+          this.graph.push(price);
+        }
+      }, 3000);
+    },
+
+    filtredTickers() {
+      const tickersByPage = 6
+      const start = this.page > 1 ? (this.page - 1) * tickersByPage : 0;
+      const end = tickersByPage * this.page;
+      const filtredTickers =  this.tickers.filter(ticker => ticker.name.includes(this.filter.toUpperCase()));
+      const filtredTickersOnPage = filtredTickers.slice(start, end);
+      if (!filtredTickersOnPage.length && this.page > 1){
+        this.page = this.page - 1;
+      }
+      this.hasNextPage = filtredTickers.length > end;
+      return filtredTickersOnPage;
     }
   },
+
   created() {
     async function loadAllBinanceTickers() {
       return await fetch(`https://fapi.binance.com/fapi/v1/premiumIndex`)
           .then(res => res.json());
     }
+
     loadAllBinanceTickers().then(allBinanceTickers => {
       return allBinanceTickers.map(ticker => {
         if (ticker.symbol.includes('USDT')) {
           return ticker.symbol.slice(0, ticker.symbol.search('USDT'));
         }
-      })
+      });
     }).then(allBinanceUsdtTickers => {
       const uniqUsdtTickers = new Set(allBinanceUsdtTickers);
       uniqUsdtTickers.delete(undefined);
+
       localStorage.setItem('binance-tickers-list', JSON.stringify([...uniqUsdtTickers]));
-    })
+    });
+    const savedTickers = JSON.parse(localStorage.getItem('tickers-list'));
+
+    if (savedTickers) {
+      this.tickers = savedTickers;
+      console.log(this.tickers)
+      savedTickers.forEach((ticker) => {
+        this.subscribeToTickerUpdates(ticker.name);
+      });
+    }
   }
 }
 </script>
@@ -168,28 +229,58 @@ export default {
           </svg>
           Add
         </button>
+        <hr class="w-full border-t border-gray-600 my-4"/>
+        <div class="flex">
+          <div class="max-w-xs">
+            <div class="flex flex-col">
+              <label for="filter" class="block text-sm font-medium text-gray-700">Filter</label>
+              <div class="mt-1 relative rounded-md shadow-md">
+                <input
+                    type="text"
+                    name="filter"
+                    id="filter"
+                    v-model="filter"
+                    class="block w-full pr-10 border-gray-300 text-gray-900 focus:outline-none focus:ring-gray-500 focus:border-gray-500 sm:text-sm rounded-md"/>
+              </div>
+              <div>
+                <button
+                    v-if="page > 1"
+                    @click="page = page -1"
+                    class="my-4 mr-2 inline-flex items-center py-2 px-4  border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+                  Back
+                </button>
+                <button
+                    v-if="hasNextPage"
+                    @click="page = page + 1"
+                    class="my-4 mx-2 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+                  Next
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
       <template v-if="tickers.length">
         <hr class="w-full border-t border-gray-600 my-4"/>
         <dl class="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-3">
-          <div v-for="(ticket, index) in tickers" :key="ticket.name"
-               @click="selectTicker(ticket)"
+          <div v-for="(ticker, index) in filtredTickers()" :key="ticker.name"
+               @click="selectTicker(ticker)"
                :class="{
-                  'border-purple-800': select === ticket
+                  'border-purple-800': select === ticker
                }"
                class="bg-white overflow-hidden shadow rounded-lg  border-solid border-4 cursor-pointer"
           >
             <div class="px-4 py-5 sm:p-6 text-center">
               <dt class="text-sm font-medium text-gray-500 truncate">
-                {{ ticket.name.toUpperCase() }}/USDT
+                {{ ticker.name.toUpperCase() }}/USDT
               </dt>
               <dd class="mt-1 text-3xl font-semibold text-gray-900">
-                {{ ticket.value }}
+                {{ ticker.value }}
               </dd>
             </div>
             <div class="w-full border-t border-gray-200"></div>
             <button
-                @click.stop="deleteTicker(ticket)"
+                @click.stop="deleteTicker(ticker)"
                 class="flex items-center justify-center font-medium w-full bg-gray-100 px-4 py-4 sm:px-6 text-md text-gray-500 hover:text-gray-600 hover:bg-gray-200 hover:opacity-20 transition-all focus:outline-none"
             >
               <svg
@@ -205,7 +296,7 @@ export default {
                     clip-rule="evenodd"
                 ></path>
               </svg>
-              Удалить
+              Delete
             </button>
           </div>
         </dl>
