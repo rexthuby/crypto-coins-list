@@ -40,6 +40,7 @@ export default {
       localStorage.setItem('tickers-list', JSON.stringify(this.tickers));
 
       this.filter = '';
+      this.error = '';
       this.ticker = '';
       this.matchTicker = [];
     },
@@ -166,6 +167,34 @@ export default {
       savedTickers.forEach((ticker) => {
         this.subscribeToTickerUpdates(ticker.name);
       });
+    }
+
+    const windowData = Object.fromEntries(new URL(window.location).searchParams.entries());
+
+    if (windowData.filter){
+      this.filter = windowData.filter;
+    }
+
+    if (windowData.page){
+      this.page = windowData.page;
+    }
+  },
+
+  watch: {
+    filter() {
+      window.history.pushState(
+          null,
+          document.title,
+          `${window.location.origin}/?filter=${this.filter}&page=${this.page}`
+      );
+    },
+
+    page() {
+      window.history.pushState(
+          null,
+          document.title,
+          `${window.location.origin}/?filter=${this.filter}&page=${this.page}`
+      );
     }
   }
 }
