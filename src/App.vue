@@ -5,13 +5,12 @@ export default {
     return {
       ticker: '',
       tickers: [],
-      select: null,
+      selectedTicker: null,
       graph: [],
       error: '',
       matchTicker: [],
       filter: '',
       page: 1,
-      hasNextPage: false,
     }
   },
 
@@ -33,11 +32,9 @@ export default {
         value: '-',
       };
 
-      this.tickers.push(currentTicker);
+      this.tickers = [...this.tickers, currentTicker];
 
       this.subscribeToTickerUpdates(currentTicker.name);
-
-      localStorage.setItem('tickers-list', JSON.stringify(this.tickers));
 
       this.filter = '';
       this.error = '';
@@ -45,56 +42,15 @@ export default {
       this.matchTicker = [];
     },
 
-    validateTicker() {
-      if (this.tickers.filter(t => t.name.toLowerCase() === this.ticker.toLowerCase()).length) {
-        throw new Error('Ticker is in list');
-      }
-
-      const ticketList = JSON.parse(localStorage.getItem('binance-tickers-list'));
-      if (!ticketList.filter(name => name === this.ticker.toUpperCase()).length) {
-        throw new Error('Ticker is not exist on binance');
-      }
-    },
-
-    deleteTicker(deleteTicket) {
-      this.tickers = this.tickers.filter((ticket) => ticket !== deleteTicket);
+    deleteTicker(deleteTicker) {
+      this.tickers = this.tickers.filter(ticker => ticker !== deleteTicker);
 
       localStorage.setItem('tickers-list', JSON.stringify(this.tickers));
 
-      if (deleteTicket === this.select) {
-        this.select = null;
+      if (deleteTicker === this.selectedTicker) {
+        this.selectedTicker = null;
       }
 
-    },
-
-    normalizedGraph() {
-      const maxValue = Math.max(...this.graph);
-      const minValue = Math.min(...this.graph);
-
-      if (maxValue === minValue) {
-        return this.graph.map((price) => 50);
-      }
-
-      return this.graph.map((price) => 2 + ((price - minValue) * 98) / (maxValue - minValue));
-    },
-
-    selectTicker(ticket) {
-      this.graph = [];
-      this.select = ticket;
-    },
-
-    setSimilarTickers() {
-      this.error = '';
-
-      if (!this.ticker.length) {
-        this.matchTicker = [];
-        return
-      }
-
-      const binanceTickers = JSON.parse(localStorage.getItem('binance-tickers-list'))
-      this.matchTicker = binanceTickers.filter(t => {
-        return t.toLowerCase().includes(this.ticker.toLowerCase());
-      });
     },
 
     setSelectedTicker(tickerName) {
@@ -105,20 +61,23 @@ export default {
     subscribeToTickerUpdates(tickerName) {
       setInterval(async () => {
 
-        if (!this.tickers.filter((t) => t.name === tickerName).length) {
+        if (!this.tickers.filter(ticker => ticker.name === tickerName).length) {
           return
         }
 
         const binanceTickerData = await fetch(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${tickerName}usdt`)
-            .then((res) => res.json());
+            .then(res => res.json());
 
         const price = parseFloat(binanceTickerData.markPrice) > 1 ?
             parseFloat(binanceTickerData.markPrice).toFixed(2) :
             parseFloat(binanceTickerData.markPrice).toPrecision(2);
 
-        this.tickers.find((ticker) => tickerName === ticker.name).value = price;
+        const findTicker = this.tickers.find(ticker => tickerName === ticker.name);
+        if (findTicker?.value){
+          findTicker.value = price
+        }
 
-        if (this.select?.name === tickerName) {
+        if (this.selectedTicker?.name === tickerName) {
           if (this.graph.length > 200) {
             this.graph.shift();
           }
@@ -127,17 +86,71 @@ export default {
       }, 3000);
     },
 
-    filtredTickers() {
-      const tickersByPage = 6
-      const start = this.page > 1 ? (this.page - 1) * tickersByPage : 0;
-      const end = tickersByPage * this.page;
-      const filtredTickers =  this.tickers.filter(ticker => ticker.name.includes(this.filter.toUpperCase()));
-      const filtredTickersOnPage = filtredTickers.slice(start, end);
-      if (!filtredTickersOnPage.length && this.page > 1){
-        this.page = this.page - 1;
+    setSimilarTickers(){
+      this.error = '';
+
+      if (!this.ticker.length) {
+        this.matchTicker = [];
+        return
       }
-      this.hasNextPage = filtredTickers.length > end;
-      return filtredTickersOnPage;
+
+      const binanceTickers = JSON.parse(localStorage.getItem('binance-tickers-list'))
+      this.matchTicker = binanceTickers.filter(ticker => {
+        return ticker.toLowerCase().includes(this.ticker.toLowerCase());
+      });
+    },
+
+    validateTicker() {
+      if (this.tickers.filter(ticker => ticker.name.toLowerCase() === this.ticker.toLowerCase()).length) {
+        throw new Error('Ticker is in list');
+      }
+
+      const ticketList = JSON.parse(localStorage.getItem('binance-tickers-list'));
+      if (!ticketList.filter(name => name === this.ticker.toUpperCase()).length) {
+        throw new Error('Ticker is not exist on binance');
+      }
+    },
+  },
+
+  computed: {
+    endTickerIndex(){
+      const tickersByPage = 6
+      return tickersByPage * this.page;
+    },
+
+    startTickerIndex(){
+    const tickersByPage = 6
+      return this.page > 1 ? (this.page - 1) * tickersByPage : 0;
+    },
+
+    filtredTickers(){
+      return this.tickers.filter(ticker => ticker.name.includes(this.filter.toUpperCase()));
+    },
+
+    hasNextPage(){
+      return this.filtredTickers.length > this.endTickerIndex;
+    },
+
+    normalizedGraph() {
+      const maxValue = Math.max(...this.graph);
+      const minValue = Math.min(...this.graph);
+
+      if (maxValue === minValue) {
+        return this.graph.map(price => 50);
+      }
+
+      return this.graph.map(price => 2 + ((price - minValue) * 98) / (maxValue - minValue));
+    },
+
+    filtredTickersOnPage() {
+      return this.filtredTickers.slice(this.startTickerIndex, this.endTickerIndex);
+    },
+
+    pageStateOptions(){
+      return {
+        filter: this.filter,
+        page: this.page
+      }
     }
   },
 
@@ -163,7 +176,6 @@ export default {
 
     if (savedTickers) {
       this.tickers = savedTickers;
-      console.log(this.tickers)
       savedTickers.forEach((ticker) => {
         this.subscribeToTickerUpdates(ticker.name);
       });
@@ -171,30 +183,36 @@ export default {
 
     const windowData = Object.fromEntries(new URL(window.location).searchParams.entries());
 
-    if (windowData.filter){
+    if (windowData.filter) {
       this.filter = windowData.filter;
     }
 
-    if (windowData.page){
+    if (windowData.page) {
       this.page = windowData.page;
     }
   },
 
   watch: {
-    filter() {
+    pageStateOptions(value) {
       window.history.pushState(
           null,
           document.title,
-          `${window.location.origin}/?filter=${this.filter}&page=${this.page}`
+          `${window.location.origin}/?filter=${value.filter}&page=${value.page}`
       );
     },
 
-    page() {
-      window.history.pushState(
-          null,
-          document.title,
-          `${window.location.origin}/?filter=${this.filter}&page=${this.page}`
-      );
+    filtredTickersOnPage(){
+      if (this.filtredTickersOnPage.length === 0 && this.page > 1) {
+        this.page -= 1;
+      }
+    },
+
+    selectedTicker(){
+      this.graph = [];
+    },
+
+    tickers(){
+      localStorage.setItem('tickers-list', JSON.stringify(this.tickers));
     }
   }
 }
@@ -218,7 +236,7 @@ export default {
                   placeholder="DOGE"
                   v-model="ticker"
                   @keydown.enter="addTicker"
-                  @input="setSimilarTickers"
+                  @input="setSimilarTickers()"
               />
             </div>
             <div v-if="matchTicker.length" class="flex bg-white shadow-md p-1 rounded-md shadow-md flex-wrap">
@@ -292,10 +310,10 @@ export default {
       <template v-if="tickers.length">
         <hr class="w-full border-t border-gray-600 my-4"/>
         <dl class="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-3">
-          <div v-for="(ticker, index) in filtredTickers()" :key="ticker.name"
-               @click="selectTicker(ticker)"
+          <div v-for="(ticker, index) in filtredTickersOnPage" :key="ticker.name"
+               @click="this.selectedTicker = ticker"
                :class="{
-                  'border-purple-800': select === ticker
+                  'border-purple-800': selectedTicker === ticker
                }"
                class="bg-white overflow-hidden shadow rounded-lg  border-solid border-4 cursor-pointer"
           >
@@ -330,13 +348,13 @@ export default {
           </div>
         </dl>
         <hr class="w-full border-t border-gray-600 my-4"/>
-        <section v-if="select != null" class="relative">
+        <section v-if="selectedTicker != null" class="relative">
           <h3 class="text-lg leading-6 font-medium text-gray-900 my-8">
-            {{ select.name.toUpperCase() }}/USD
+            {{ selectedTicker.name.toUpperCase() }}/USD
           </h3>
           <div class="flex items-end border-gray-600 border-b border-l h-64">
             <div
-                v-for="(bar, index) in normalizedGraph()"
+                v-for="(bar, index) in normalizedGraph"
                 :key="index"
                 :style="{
                   height: `${bar}%`
@@ -344,7 +362,7 @@ export default {
                 class="bg-purple-800 border w-10"
             ></div>
             <button
-                @click="select = null"
+                @click="selectedTicker = null"
                 type="button"
                 class="absolute top-0 right-0"
             >
