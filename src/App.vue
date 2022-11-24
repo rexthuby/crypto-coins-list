@@ -1,4 +1,6 @@
 <script>
+import {loadAllBinanceTickers, loadTickers} from "./Api.js";
+
 export default {
   name: 'App',
   data() {
@@ -34,8 +36,6 @@ export default {
 
       this.tickers = [...this.tickers, currentTicker];
 
-      this.subscribeToTickerUpdates(currentTicker.name);
-
       this.filter = '';
       this.error = '';
       this.ticker = '';
@@ -44,8 +44,6 @@ export default {
 
     deleteTicker(deleteTicker) {
       this.tickers = this.tickers.filter(ticker => ticker !== deleteTicker);
-
-      localStorage.setItem('tickers-list', JSON.stringify(this.tickers));
 
       if (deleteTicker === this.selectedTicker) {
         this.selectedTicker = null;
@@ -58,35 +56,41 @@ export default {
       this.addTicker();
     },
 
-    subscribeToTickerUpdates(tickerName) {
-      setInterval(async () => {
+    async subscribeToUpdateTickers() {
 
-        if (!this.tickers.filter(ticker => ticker.name === tickerName).length) {
+      if (this.tickers.length === 0) {
+        return
+      }
+
+      const binanceTickersData = await loadTickers(this.tickers.map(ticker => ticker.name));
+
+      if (binanceTickersData === undefined) {
+        return
+      }
+
+      this.tickers.forEach(ticker => {
+        const binanceTicker = binanceTickersData.filter(binanceTicker => {
+          return binanceTicker.symbol === ticker.name.toUpperCase() + 'USDT'
+        })[0];
+
+        if (binanceTicker === undefined) {
           return
         }
 
-        const binanceTickerData = await fetch(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${tickerName}usdt`)
-            .then(res => res.json());
+        ticker.value = parseFloat(binanceTicker.price) > 1 ?
+            parseFloat(binanceTicker.price).toFixed(2) :
+            parseFloat(binanceTicker.price).toPrecision(2);
 
-        const price = parseFloat(binanceTickerData.markPrice) > 1 ?
-            parseFloat(binanceTickerData.markPrice).toFixed(2) :
-            parseFloat(binanceTickerData.markPrice).toPrecision(2);
-
-        const findTicker = this.tickers.find(ticker => tickerName === ticker.name);
-        if (findTicker?.value){
-          findTicker.value = price
-        }
-
-        if (this.selectedTicker?.name === tickerName) {
+        if (this.selectedTicker?.name === ticker.name) {
           if (this.graph.length > 200) {
             this.graph.shift();
           }
-          this.graph.push(price);
+          this.graph.push(ticker.value);
         }
-      }, 3000);
+      });
     },
 
-    setSimilarTickers(){
+    setSimilarTickers() {
       this.error = '';
 
       if (!this.ticker.length) {
@@ -113,21 +117,21 @@ export default {
   },
 
   computed: {
-    endTickerIndex(){
+    endTickerIndex() {
       const tickersByPage = 6
       return tickersByPage * this.page;
     },
 
-    startTickerIndex(){
-    const tickersByPage = 6
+    startTickerIndex() {
+      const tickersByPage = 6
       return this.page > 1 ? (this.page - 1) * tickersByPage : 0;
     },
 
-    filtredTickers(){
+    filtredTickers() {
       return this.tickers.filter(ticker => ticker.name.includes(this.filter.toUpperCase()));
     },
 
-    hasNextPage(){
+    hasNextPage() {
       return this.filtredTickers.length > this.endTickerIndex;
     },
 
@@ -146,7 +150,7 @@ export default {
       return this.filtredTickers.slice(this.startTickerIndex, this.endTickerIndex);
     },
 
-    pageStateOptions(){
+    pageStateOptions() {
       return {
         filter: this.filter,
         page: this.page
@@ -155,30 +159,22 @@ export default {
   },
 
   created() {
-    async function loadAllBinanceTickers() {
-      return await fetch(`https://fapi.binance.com/fapi/v1/premiumIndex`)
-          .then(res => res.json());
-    }
-
     loadAllBinanceTickers().then(allBinanceTickers => {
       return allBinanceTickers.map(ticker => {
         if (ticker.symbol.includes('USDT')) {
-          return ticker.symbol.slice(0, ticker.symbol.search('USDT'));
+          return ticker.symbol.slice(0, ticker.symbol.search('USDT'))
         }
-      });
+      })
     }).then(allBinanceUsdtTickers => {
       const uniqUsdtTickers = new Set(allBinanceUsdtTickers);
       uniqUsdtTickers.delete(undefined);
-
       localStorage.setItem('binance-tickers-list', JSON.stringify([...uniqUsdtTickers]));
     });
+
     const savedTickers = JSON.parse(localStorage.getItem('tickers-list'));
 
     if (savedTickers) {
       this.tickers = savedTickers;
-      savedTickers.forEach((ticker) => {
-        this.subscribeToTickerUpdates(ticker.name);
-      });
     }
 
     const windowData = Object.fromEntries(new URL(window.location).searchParams.entries());
@@ -190,28 +186,30 @@ export default {
     if (windowData.page) {
       this.page = windowData.page;
     }
+
+    setInterval(this.subscribeToUpdateTickers, 1000);
   },
 
   watch: {
-    pageStateOptions(value) {
+    pageStateOptions(newValue) {
       window.history.pushState(
           null,
           document.title,
-          `${window.location.origin}/?filter=${value.filter}&page=${value.page}`
+          `${window.location.origin}/?filter=${newValue.filter}&page=${newValue.page}`
       );
     },
 
-    filtredTickersOnPage(){
+    filtredTickersOnPage() {
       if (this.filtredTickersOnPage.length === 0 && this.page > 1) {
         this.page -= 1;
       }
     },
 
-    selectedTicker(){
+    selectedTicker() {
       this.graph = [];
     },
 
-    tickers(){
+    tickers() {
       localStorage.setItem('tickers-list', JSON.stringify(this.tickers));
     }
   }
