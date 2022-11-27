@@ -56,6 +56,21 @@ export default {
       this.addTicker();
     },
 
+    formatPrice(price){
+      return price > 1 ?
+          price.toFixed(2) :
+          price.toPrecision(2);
+    },
+
+    updateGraph(ticker){
+      if (this.selectedTicker?.name === ticker.name) {
+        if (this.graph.length > 200) {
+          this.graph.shift();
+        }
+        this.graph.push(ticker.value);
+      }
+    },
+
     async subscribeToUpdateTickers() {
 
       if (this.tickers.length === 0) {
@@ -77,16 +92,9 @@ export default {
           return
         }
 
-        ticker.value = parseFloat(binanceTicker.price) > 1 ?
-            parseFloat(binanceTicker.price).toFixed(2) :
-            parseFloat(binanceTicker.price).toPrecision(2);
+        ticker.value = this.formatPrice(parseFloat(binanceTicker.price));
 
-        if (this.selectedTicker?.name === ticker.name) {
-          if (this.graph.length > 200) {
-            this.graph.shift();
-          }
-          this.graph.push(ticker.value);
-        }
+        this.updateGraph(ticker);
       });
     },
 
@@ -210,7 +218,12 @@ export default {
     },
 
     tickers() {
-      localStorage.setItem('tickers-list', JSON.stringify(this.tickers));
+      localStorage.setItem('tickers-list', JSON.stringify(this.tickers.map(t => {
+        return {
+          name: t.name,
+          value: '-'
+        }
+      })));
     }
   }
 }
