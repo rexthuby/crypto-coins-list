@@ -62,12 +62,10 @@ export default {
           price.toPrecision(2);
     },
 
-    updateGraph(ticker){
+    updateGraphPrices(ticker){
       if (this.selectedTicker?.name === ticker.name) {
-        if (this.graph.length > 200) {
-          this.graph.shift();
-        }
         this.graph.push(ticker.value);
+        this.normalizeGraphsBarAmount();
       }
     },
 
@@ -94,7 +92,7 @@ export default {
 
         ticker.value = this.formatPrice(parseFloat(binanceTicker.price));
 
-        this.updateGraph(ticker);
+        this.updateGraphPrices(ticker);
       });
     },
 
@@ -122,6 +120,17 @@ export default {
         throw new Error('Ticker is not exist on binance');
       }
     },
+
+    normalizeGraphsBarAmount(){
+      if (!this.selectedTicker){
+        return
+      }
+      const divWidth = this.$refs.graph.clientWidth;
+      console.log(divWidth, this.graphsBarMinWidth);
+      while (divWidth/this.graphsBarMinWidth < this.graph.length) {
+        this.graph.shift();
+      }
+    }
   },
 
   computed: {
@@ -150,7 +159,6 @@ export default {
       if (maxValue === minValue) {
         return this.graph.map(price => 50);
       }
-
       return this.graph.map(price => 2 + ((price - minValue) * 98) / (maxValue - minValue));
     },
 
@@ -163,6 +171,39 @@ export default {
         filter: this.filter,
         page: this.page
       }
+    },
+
+    graphsBarMinWidth(){
+      return 15
+    }
+  },
+
+  watch: {
+    pageStateOptions(newValue) {
+      window.history.pushState(
+          null,
+          document.title,
+          `${window.location.origin}/?filter=${newValue.filter}&page=${newValue.page}`
+      );
+    },
+
+    filtredTickersOnPage() {
+      if (this.filtredTickersOnPage.length === 0 && this.page > 1) {
+        this.page -= 1;
+      }
+    },
+
+    selectedTicker() {
+      this.graph = [];
+    },
+
+    tickers() {
+      localStorage.setItem('tickers-list', JSON.stringify(this.tickers.map(t => {
+        return {
+          name: t.name,
+          value: '-'
+        }
+      })));
     }
   },
 
@@ -195,37 +236,16 @@ export default {
       this.page = windowData.page;
     }
 
-    setInterval(this.subscribeToUpdateTickers, 1000);
+    setInterval(this.subscribeToUpdateTickers, 5000);
   },
 
-  watch: {
-    pageStateOptions(newValue) {
-      window.history.pushState(
-          null,
-          document.title,
-          `${window.location.origin}/?filter=${newValue.filter}&page=${newValue.page}`
-      );
-    },
+  mounted() {
+    window.addEventListener('resize', this.normalizeGraphsBarAmount);
+  },
 
-    filtredTickersOnPage() {
-      if (this.filtredTickersOnPage.length === 0 && this.page > 1) {
-        this.page -= 1;
-      }
-    },
-
-    selectedTicker() {
-      this.graph = [];
-    },
-
-    tickers() {
-      localStorage.setItem('tickers-list', JSON.stringify(this.tickers.map(t => {
-        return {
-          name: t.name,
-          value: '-'
-        }
-      })));
-    }
-  }
+  beforeUnmount() {
+    window.removeEventListener('resize');
+  },
 }
 </script>
 
@@ -359,16 +379,17 @@ export default {
           </div>
         </dl>
         <hr class="w-full border-t border-gray-600 my-4"/>
-        <section v-if="selectedTicker != null" class="relative">
+        <section v-show="selectedTicker != null" class="relative">
           <h3 class="text-lg leading-6 font-medium text-gray-900 my-8">
-            {{ selectedTicker.name.toUpperCase() }}/USD
+            {{ selectedTicker?.name.toUpperCase() }}/USD
           </h3>
-          <div class="flex items-end border-gray-600 border-b border-l h-64">
+          <div class="flex items-end border-gray-600 border-b border-l h-64" ref="graph">
             <div
                 v-for="(bar, index) in normalizedGraph"
                 :key="index"
                 :style="{
-                  height: `${bar}%`
+                  height: `${bar}%`,
+                  minWidth: `${graphsBarMinWidth}px`,
                 }"
                 class="bg-purple-800 border w-10"
             ></div>
