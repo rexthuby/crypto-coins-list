@@ -1,45 +1,23 @@
 <script>
 import {loadAllBinanceTickers, loadTickers} from "./Api.js";
+import AddTicker from "./components/AddTicker.vue";
 
 export default {
   name: 'App',
+  components: {AddTicker},
   data() {
     return {
-      ticker: '',
       tickers: [],
       selectedTicker: null,
       graph: [],
-      error: '',
-      matchTicker: [],
       filter: '',
       page: 1,
     }
   },
 
   methods: {
-    addTicker() {
-      if (!this.ticker.length) {
-        return
-      }
-
-      try {
-        this.validateTicker();
-      } catch (e) {
-        this.error = e.message;
-        return
-      }
-
-      const currentTicker = {
-        name: this.ticker,
-        value: '-',
-      };
-
-      this.tickers = [...this.tickers, currentTicker];
-
-      this.filter = '';
-      this.error = '';
-      this.ticker = '';
-      this.matchTicker = [];
+    addTicker(ticker) {
+      this.tickers = [...this.tickers, ticker];
     },
 
     deleteTicker(deleteTicker) {
@@ -48,39 +26,23 @@ export default {
       if (deleteTicker === this.selectedTicker) {
         this.selectedTicker = null;
       }
-
     },
 
-    setSelectedTicker(tickerName) {
-      this.ticker = tickerName;
-      this.addTicker();
-    },
-
-    formatPrice(price){
+    formatPrice(price) {
       return price > 1 ?
           price.toFixed(2) :
           price.toPrecision(2);
     },
 
-    updateGraphPrices(ticker){
+    updateGraphPrices(ticker) {
       if (this.selectedTicker?.name === ticker.name) {
         this.graph.push(ticker.value);
         this.normalizeGraphsBarAmount();
       }
     },
 
-    async subscribeToUpdateTickers() {
 
-      if (this.tickers.length === 0) {
-        return
-      }
-
-      const binanceTickersData = await loadTickers(this.tickers.map(ticker => ticker.name));
-
-      if (binanceTickersData === undefined) {
-        return
-      }
-
+    updateTickersPrices(binanceTickersData) {
       this.tickers.forEach(ticker => {
         const binanceTicker = binanceTickersData.filter(binanceTicker => {
           return binanceTicker.symbol === ticker.name.toUpperCase() + 'USDT'
@@ -96,39 +58,29 @@ export default {
       });
     },
 
-    setSimilarTickers() {
-      this.error = '';
+    async subscribeToUpdateTickers() {
 
-      if (!this.ticker.length) {
-        this.matchTicker = [];
+      if (this.tickers.length === 0) {
         return
       }
 
-      const binanceTickers = JSON.parse(localStorage.getItem('binance-tickers-list'))
-      this.matchTicker = binanceTickers.filter(ticker => {
-        return ticker.toLowerCase().includes(this.ticker.toLowerCase());
-      });
-    },
+      const binanceTickersData = await loadTickers(this.tickers.map(ticker => ticker.name));
 
-    validateTicker() {
-      if (this.tickers.filter(ticker => ticker.name.toLowerCase() === this.ticker.toLowerCase()).length) {
-        throw new Error('Ticker is in list');
+      if (binanceTickersData === undefined) {
+        return
       }
 
-      const ticketList = JSON.parse(localStorage.getItem('binance-tickers-list'));
-      if (!ticketList.filter(name => name === this.ticker.toUpperCase()).length) {
-        throw new Error('Ticker is not exist on binance');
-      }
+      this.updateTickersPrices(binanceTickersData);
     },
 
-    normalizeGraphsBarAmount(){
-      if (!this.selectedTicker){
+    normalizeGraphsBarAmount() {
+      if (!this.selectedTicker) {
         return
       }
       const divWidth = this.$refs.graph.clientWidth;
-      console.log(divWidth, this.graphsBarMinWidth);
-      while (divWidth/this.graphsBarMinWidth < this.graph.length) {
-        this.graph.shift();
+      const maxGraphsBarAmount = divWidth / this.graphsBarMinWidth;
+      if (maxGraphsBarAmount < this.graph.length) {
+        this.graph = this.graph.slice(this.graph.length - maxGraphsBarAmount, this.graph.length)
       }
     }
   },
@@ -144,12 +96,12 @@ export default {
       return this.page > 1 ? (this.page - 1) * tickersByPage : 0;
     },
 
-    filtredTickers() {
+    filteredTickers() {
       return this.tickers.filter(ticker => ticker.name.includes(this.filter.toUpperCase()));
     },
 
     hasNextPage() {
-      return this.filtredTickers.length > this.endTickerIndex;
+      return this.filteredTickers.length > this.endTickerIndex;
     },
 
     normalizedGraph() {
@@ -162,8 +114,8 @@ export default {
       return this.graph.map(price => 2 + ((price - minValue) * 98) / (maxValue - minValue));
     },
 
-    filtredTickersOnPage() {
-      return this.filtredTickers.slice(this.startTickerIndex, this.endTickerIndex);
+    filteredTickersOnPage() {
+      return this.filteredTickers.slice(this.startTickerIndex, this.endTickerIndex);
     },
 
     pageStateOptions() {
@@ -173,7 +125,7 @@ export default {
       }
     },
 
-    graphsBarMinWidth(){
+    graphsBarMinWidth() {
       return 15
     }
   },
@@ -188,7 +140,7 @@ export default {
     },
 
     filtredTickersOnPage() {
-      if (this.filtredTickersOnPage.length === 0 && this.page > 1) {
+      if (this.filteredTickersOnPage.length === 0 && this.page > 1) {
         this.page -= 1;
       }
     },
@@ -208,18 +160,6 @@ export default {
   },
 
   created() {
-    loadAllBinanceTickers().then(allBinanceTickers => {
-      return allBinanceTickers.map(ticker => {
-        if (ticker.symbol.includes('USDT')) {
-          return ticker.symbol.slice(0, ticker.symbol.search('USDT'))
-        }
-      })
-    }).then(allBinanceUsdtTickers => {
-      const uniqUsdtTickers = new Set(allBinanceUsdtTickers);
-      uniqUsdtTickers.delete(undefined);
-      localStorage.setItem('binance-tickers-list', JSON.stringify([...uniqUsdtTickers]));
-    });
-
     const savedTickers = JSON.parse(localStorage.getItem('tickers-list'));
 
     if (savedTickers) {
@@ -236,7 +176,7 @@ export default {
       this.page = windowData.page;
     }
 
-    setInterval(this.subscribeToUpdateTickers, 5000);
+    setInterval(this.subscribeToUpdateTickers, 1000);
   },
 
   mounted() {
@@ -244,7 +184,7 @@ export default {
   },
 
   beforeUnmount() {
-    window.removeEventListener('resize');
+    window.removeEventListener('resize', this.normalizeGraphsBarAmount);
   },
 }
 </script>
@@ -253,61 +193,7 @@ export default {
   <div class="container mx-auto flex flex-col items-center bg-gray-100 p-4">
     <div class="container">
       <section>
-        <div class="flex">
-          <div class="max-w-xs">
-            <label for="wallet" class="block text-sm font-medium text-gray-700"
-            >Ticker</label
-            >
-            <div class="mt-1 relative rounded-md shadow-md">
-              <input
-                  type="text"
-                  name="wallet"
-                  id="wallet"
-                  class="block w-full pr-10 border-gray-300 text-gray-900 focus:outline-none focus:ring-gray-500 focus:border-gray-500 sm:text-sm rounded-md"
-                  placeholder="DOGE"
-                  v-model="ticker"
-                  @keydown.enter="addTicker"
-                  @input="setSimilarTickers()"
-              />
-            </div>
-            <div v-if="matchTicker.length" class="flex bg-white shadow-md p-1 rounded-md shadow-md flex-wrap">
-              <template v-if="matchTicker.length < 5" v-for="(value, i) in matchTicker" :key="i">
-                 <span @click="setSelectedTicker(matchTicker[i])"
-                       class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer">
-                {{ matchTicker[i] }}
-                </span>
-              </template>
-              <template v-if="matchTicker.length > 4" v-for="(value, i) in [0,1,2,3]" :key="i">
-                 <span @click="setSelectedTicker(matchTicker[i])"
-                       class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer">
-                {{ matchTicker[i] }}
-                </span>
-              </template>
-            </div>
-            <div v-if="error.length" class="text-sm text-red-600">{{ error }}</div>
-          </div>
-        </div>
-        <button
-            @click="addTicker"
-            type="button"
-            class="my-4 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
-        >
-          <!-- Heroicon name: solid/mail -->
-          <svg
-              class="-ml-0.5 mr-2 h-6 w-6"
-              xmlns="http://www.w3.org/2000/svg"
-              width="30"
-              height="30"
-              viewBox="0 0 24 24"
-              fill="#ffffff"
-          >
-            <path
-                d="M13 7h-2v4H7v2h4v4h2v-4h4v-2h-4V7zm-1-5C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"
-            ></path>
-          </svg>
-          Add
-        </button>
-        <hr class="w-full border-t border-gray-600 my-4"/>
+        <add-ticker :tickers="tickers" @add-ticker="addTicker"/>
         <div class="flex">
           <div class="max-w-xs">
             <div class="flex flex-col">
@@ -341,7 +227,7 @@ export default {
       <template v-if="tickers.length">
         <hr class="w-full border-t border-gray-600 my-4"/>
         <dl class="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-3">
-          <div v-for="(ticker, index) in filtredTickersOnPage" :key="ticker.name"
+          <div v-for="(ticker, index) in filteredTickersOnPage" :key="ticker.name"
                @click="this.selectedTicker = ticker"
                :class="{
                   'border-purple-800': selectedTicker === ticker
@@ -379,7 +265,7 @@ export default {
           </div>
         </dl>
         <hr class="w-full border-t border-gray-600 my-4"/>
-        <section v-show="selectedTicker != null" class="relative">
+        <section v-if="selectedTicker != null" class="relative">
           <h3 class="text-lg leading-6 font-medium text-gray-900 my-8">
             {{ selectedTicker?.name.toUpperCase() }}/USD
           </h3>
